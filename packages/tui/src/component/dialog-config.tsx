@@ -360,6 +360,15 @@ export const settings: Setting[] = [
     keywords: ["selection", "clipboard"],
   },
   {
+    title: "Shell",
+    category: "Terminal",
+    path: ["shell"],
+    description: "Shell used for running commands",
+    default: "",
+    values: ["", "bash", "zsh", "fish", "sh"],
+    keywords: ["shell terminal command executor"],
+  },
+  {
     title: "Developer tools",
     category: "Debug",
     path: ["debug", "devtools"],
