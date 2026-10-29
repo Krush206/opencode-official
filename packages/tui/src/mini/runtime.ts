@@ -10,6 +10,7 @@
 //   4. runs the prompt queue until the footer closes.
 import { SessionMessage } from "@opencode/schema/session-message"
 import type { LocationRef } from "@opencode/client/promise"
+import type { Config } from "../config"
 import { newSessionLocation } from "../config/new-session-location"
 import { errorMessage } from "../util/error"
 import { loadRunAgents, loadRunCommands, loadRunReferences } from "./catalog.shared"
@@ -62,10 +63,7 @@ type RunRuntimeInput = {
   replayLimit?: number
   demo?: RunInput["demo"]
   tuiConfig?: RunTuiConfig | Promise<RunTuiConfig>
-  config?: {
-    get: () => Promise<{ shell?: string }>
-    update: (update: (draft: any) => void) => Promise<any>
-  }
+  config?: Pick<Config.Interface, "update">
 }
 
 export type RunDeferredInput = {
@@ -84,10 +82,7 @@ export type RunDeferredInput = {
   replayLimit?: number
   demo?: RunInput["demo"]
   tuiConfig?: RunTuiConfig | Promise<RunTuiConfig>
-  config?: {
-    get: () => Promise<{ shell?: string }>
-    update: (update: (draft: any) => void) => Promise<any>
-  }
+  config?: Pick<Config.Interface, "update">
 }
 
 type StreamTransportModule = Pick<
@@ -201,11 +196,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   const log = input.host.diagnostics.trace
   const config = input.config
   let shellFromConfig = ""
-  if (config) {
-    const info = await config.get()
-    shellFromConfig = info.shell ?? ""
-  }
-  const configState: { current: MiniSettings } = { current: resolveMiniSettings({ shell: shellFromConfig }) }
+  const configState: { current: MiniSettings } = { current: resolveMiniSettings() }
   const tuiConfigTask = resolveRunTuiConfig(input.tuiConfig, input.host.platform).then((tuiConfig) => {
     configState.current = resolveMiniSettings({ mini: tuiConfig.mini, shell: shellFromConfig })
     return tuiConfig
@@ -233,6 +224,17 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     agent: ctx.agent,
     location: ctx.location,
   }
+  // Read the default shell and the list of available shells from the core config (server), mirroring the app's shell controller.
+  const [entries, shells] = await Promise.all([
+    ctx.sdk.config.get().catch(() => []),
+    ctx.sdk.config.shells().catch(() => []),
+  ])
+  const boundary = entries.findIndex((entry) => entry.type === "directory")
+  const global = boundary === -1 ? entries : entries.slice(0, boundary)
+  shellFromConfig =
+    global.flatMap((entry) => (entry.type === "document" && entry.info.shell !== undefined ? [entry.info.shell] : [])).at(-1) ??
+    ""
+  configState.current = { ...configState.current, shell: shellFromConfig }
   const settleForm = async (sessionID: string, formID: string) => {
     if (!state.stream) return
     const stream = await state.stream
@@ -262,22 +264,23 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     variant: state.activeVariant,
     tuiConfig: tuiConfigTask,
     shell: shellFromConfig,
+    shells: shells.map((item) => item.path),
     onMiniSettingChange: config
       ? async (change: MiniSettingChange) => {
+          if (change.key === "shell") {
+            await state.sdk.config.update({ shell: change.value || null }).catch(() => {})
+            configState.current = { ...configState.current, shell: change.value }
+            return configState.current
+          }
           const info = await config.update((draft) => {
             if (!draft.mini || typeof draft.mini !== "object") draft.mini = {}
-            const c = change!
-            if (c.key === "verbosity") {
-              Object.assign(draft.mini, verbosityPreset(c.value))
+            if (change.key === "verbosity") {
+              Object.assign(draft.mini, verbosityPreset(change.value))
               return
             }
-            if (c.key === "shell") {
-              draft.shell = c.value
-              return
-            }
-            draft.mini[c.key] = c.value
+            draft.mini[change.key] = change.value
           })
-          configState.current = resolveMiniSettings({ mini: info.mini, shell: info.shell })
+          configState.current = resolveMiniSettings({ mini: info.mini, shell: configState.current.shell })
           return configState.current
         }
       : undefined,
