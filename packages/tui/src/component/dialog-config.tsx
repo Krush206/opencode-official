@@ -5,6 +5,7 @@ import { useDialog, type DialogContext } from "../ui/dialog"
 import { DialogSelect, DialogSelectChoice } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
 import { DialogThemeList } from "./dialog-theme-list"
+import { useClient } from "../context/client"
 
 type Setting = {
   title: string
@@ -365,8 +366,12 @@ export const settings: Setting[] = [
     path: ["shell"],
     description: "Shell used for running commands",
     default: "",
-    values: ["", "bash", "zsh", "fish", "sh"],
     keywords: ["shell terminal command executor"],
+    open: (dialog) => {
+      dialog.replace(() => (
+        <ShellPicker dialog={dialog} />
+      ))
+    },
   },
   {
     title: "Developer tools",
@@ -379,6 +384,56 @@ export const settings: Setting[] = [
     keywords: ["debug bar", "developer tools"],
   },
 ]
+
+function ShellPicker(props: { dialog: DialogContext }) {
+  const client = useClient()
+  const toast = useToast()
+  const [shells, setShells] = createSignal<string[]>([])
+  const [current, setCurrent] = createSignal<string>("")
+
+  createMemo(async () => {
+    try {
+      const [entries, shellsRes] = await Promise.all([
+        client.api.config.get().catch(() => []),
+        client.api.config.shells().catch(() => []),
+      ])
+      const boundary = entries.findIndex((e) => e.type === "directory")
+      const global = boundary === -1 ? entries : entries.slice(0, boundary)
+      const shell =
+        global.flatMap(e => e.type === "document" && e.info.shell !== undefined ? [e.info.shell] : []).at(-1) ?? ""
+      setCurrent(shell)
+      setShells(["", ...shellsRes.map(s => s.path)])
+    } catch {}
+  })
+
+  const options = createMemo(() =>
+    shells().map((s, i) => ({
+      title: s || "default",
+      footer: s || "default",
+      value: i,
+    }))
+  )
+
+  const changeShell = async (value: string) => {
+    try {
+      await client.api.config.update({ shell: value || null })
+      toast.show({ message: "Shell updated", variant: "info" })
+      props.dialog.replace(() => <DialogConfig current="shell" />)
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
+  return (
+    <DialogSelect
+      title="Shell"
+      options={options()}
+      current={shells().indexOf(current())}
+      onSelect={(opt) => void changeShell(shells()[opt.value] ?? "")}
+      footerHints={[{ title: "select", label: "enter" }]}
+    />
+  )
+}
 
 export function settingID(setting: Setting) {
   return setting.path.join(".")
