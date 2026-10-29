@@ -695,6 +695,7 @@ export function RunAgentSelectBody(props: {
 export function RunSettingsBody(props: {
   theme: Accessor<RunFooterTheme>
   settings: Accessor<MiniSettings>
+  shells?: string[]
   onClose: () => void
   onChange: (change: MiniSettingChange) => void | Promise<void>
   mono?: boolean
@@ -769,9 +770,9 @@ export function RunSettingsBody(props: {
     {
       category: "Terminal",
       display: "Shell",
-      footer: props.settings().shell,
-      footerTone: "selection",
-      keywords: `shell terminal command executor ${props.settings().shell}`,
+      footer: saving() === "shell" ? "saving" : props.settings().shell || "default",
+      footerTone: saving() === "shell" ? "running" : "selection",
+      keywords: `shell terminal command executor ${props.settings().shell || "default"}`,
       key: "shell",
     },
     {
@@ -797,11 +798,8 @@ export function RunSettingsBody(props: {
   ])
   const change = (item: SettingEntry, direction = 1) => {
     if (saving()) return
-    if (item.key === "shell") {
-      // Display-only here; the shell is edited from full TUI settings or the CLI.
-      return
-    }
     const spinners = Config.MiniWorkSpinner.literals
+    const shellOptions = ["", ...(props.shells ?? [])]
     const next: MiniSettingChange | undefined =
       item.key === "verbosity"
         ? verbosityChange(props.settings(), direction < 0 ? -1 : 1)
@@ -813,9 +811,17 @@ export function RunSettingsBody(props: {
                   (spinners.indexOf(props.settings().work_spinner) + direction + spinners.length) % spinners.length
                 ]!,
             }
-          : item.key === "mono"
-            ? { key: "mono", value: !props.settings().mono }
-            : { key: item.key, value: props.settings()[item.key] === "show" ? "hide" : "show" }
+          : item.key === "shell"
+            ? {
+                key: "shell",
+                value:
+                  shellOptions[
+                    (shellOptions.indexOf(props.settings().shell) + direction + shellOptions.length) % shellOptions.length
+                  ]!,
+              }
+            : item.key === "mono"
+              ? { key: "mono", value: !props.settings().mono }
+              : { key: item.key, value: props.settings()[item.key] === "show" ? "hide" : "show" }
     if (!next) return
     setSaving(item.key)
     void Promise.resolve(props.onChange(next))
