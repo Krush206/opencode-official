@@ -400,17 +400,24 @@ export function DialogConfig(props: { current?: string }) {
 
   // Load shell options and current shell from core config
   const [shellData, { refetch: refetchShell }] = createResource(async () => {
-    const [entries, shellsRes] = await Promise.all([
-      client.api.config.get(),
-      client.api.config.shells(),
-    ])
-    const boundary = entries.findIndex((e) => e.type === "directory")
-    const global = boundary === -1 ? entries : entries.slice(0, boundary)
-    const shell =
-      global.flatMap((e) => e.type === "document" && e.info?.shell !== undefined ? [e.info.shell] : []).at(-1) ?? ""
-    return {
-      current: shell,
-      options: ["", ...shellsRes.map((s) => s.path)],
+    try {
+      const [entries, shellsRes] = await Promise.all([
+        client.api.config.get().catch(() => [] as any[]),
+        client.api.config.shells().catch(() => [] as any[]),
+      ])
+      const boundary = entries.findIndex((e) => e.type === "directory")
+      const global = boundary === -1 ? entries : entries.slice(0, boundary)
+      const shell =
+        global.flatMap((e) => e.type === "document" && e.info?.shell !== undefined ? [e.info.shell] : []).at(-1) ?? ""
+      return {
+        current: shell,
+        options: ["", ...shellsRes.map((s) => s.path)],
+      }
+    } catch {
+      return {
+        current: "",
+        options: [""],
+      }
     }
   })
 
