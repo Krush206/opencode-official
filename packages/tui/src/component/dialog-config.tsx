@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, createEffect } from "solid-js"
 import { useConfig, useNewDesigns } from "../config"
 import { useThemes } from "../context/theme"
 import { useDialog, type DialogContext } from "../ui/dialog"
@@ -367,11 +367,6 @@ export const settings: Setting[] = [
     description: "Shell used for running commands",
     default: "",
     keywords: ["shell terminal command executor"],
-    open: (dialog) => {
-      dialog.replace(() => (
-        <ShellPicker dialog={dialog} />
-      ))
-    },
   },
   {
     title: "Developer tools",
@@ -385,56 +380,6 @@ export const settings: Setting[] = [
   },
 ]
 
-function ShellPicker(props: { dialog: DialogContext }) {
-  const client = useClient()
-  const toast = useToast()
-  const [shells, setShells] = createSignal<string[]>([])
-  const [current, setCurrent] = createSignal<string>("")
-
-  createMemo(async () => {
-    try {
-      const [entries, shellsRes] = await Promise.all([
-        client.api.config.get().catch(() => []),
-        client.api.config.shells().catch(() => []),
-      ])
-      const boundary = entries.findIndex((e) => e.type === "directory")
-      const global = boundary === -1 ? entries : entries.slice(0, boundary)
-      const shell =
-        global.flatMap(e => e.type === "document" && e.info.shell !== undefined ? [e.info.shell] : []).at(-1) ?? ""
-      setCurrent(shell)
-      setShells(["", ...shellsRes.map(s => s.path)])
-    } catch {}
-  })
-
-  const options = createMemo(() =>
-    shells().map((s, i) => ({
-      title: s || "default",
-      footer: s || "default",
-      value: i,
-    }))
-  )
-
-  const changeShell = async (value: string) => {
-    try {
-      await client.api.config.update({ shell: value || null })
-      toast.show({ message: "Shell updated", variant: "info" })
-      props.dialog.replace(() => <DialogConfig current="shell" />)
-    } catch (e) {
-      toast.error(e)
-    }
-  }
-
-  return (
-    <DialogSelect
-      title="Shell"
-      options={options()}
-      current={shells().indexOf(current())}
-      onSelect={(opt) => void changeShell(shells()[opt.value] ?? "")}
-      footerHints={[{ title: "select", label: "enter" }]}
-    />
-  )
-}
-
 export function settingID(setting: Setting) {
   return setting.path.join(".")
 }
@@ -445,14 +390,34 @@ export function DialogConfig(props: { current?: string }) {
   const dialog = useDialog()
   const toast = useToast()
   const themes = useThemes()
+  const client = useClient()
   const current = Math.max(
     0,
     settings.findIndex((setting) => settingID(setting) === props.current),
   )
   const [selected, setSelected] = createSignal(current)
   const [saving, setSaving] = createSignal(false)
+  const [shellOptions, setShellOptions] = createSignal<string[]>([""])
+  const [shellCurrent, setShellCurrent] = createSignal<string>("")
+
+  // Load shell options and current shell from core config
+  createEffect(async () => {
+    try {
+      const [entries, shellsRes] = await Promise.all([
+        client.api.config.get().catch(() => []),
+        client.api.config.shells().catch(() => []),
+      ])
+      const boundary = entries.findIndex((e: any) => e.type === "directory")
+      const global = boundary === -1 ? entries : entries.slice(0, boundary)
+      const shell =
+        global.flatMap((e: any) => e.type === "document" && e.info?.shell !== undefined ? [e.info.shell] : []).at(-1) ?? ""
+      setShellCurrent(shell)
+      setShellOptions(["", ...shellsRes.map((s: any) => s.path)])
+    } catch {}
+  })
 
   const value = (setting: Setting) => {
+    if (setting.title === "Shell") return shellCurrent()
     const current = setting.path.reduce<unknown>((result, key) => {
       if (!result || typeof result !== "object") return undefined
       return (result as Record<string, unknown>)[key]
@@ -461,7 +426,9 @@ export function DialogConfig(props: { current?: string }) {
     return current ?? setting.default
   }
   const values = (setting: Setting) =>
-    setting.path.join(".") === "theme.name"
+    setting.title === "Shell"
+      ? shellOptions()
+      : setting.path.join(".") === "theme.name"
       ? Object.keys(themes.all()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
       : setting.values
   const display = (setting: Setting) => {
@@ -496,16 +463,24 @@ export function DialogConfig(props: { current?: string }) {
       : Math.min(setting.max!, Math.max(setting.min!, Number(current) + direction * setting.step!))
     if (next === current) return
     setSaving(true)
-    await config
-      .update((draft) => {
-        const parent = setting.path.slice(0, -1).reduce<Record<string, unknown>>((result, key) => {
-          if (!result[key] || typeof result[key] !== "object") result[key] = {}
-          return result[key] as Record<string, unknown>
-        }, draft)
-        parent[setting.path.at(-1)!] = next
-      })
-      .catch(toast.error)
-      .finally(() => setSaving(false))
+    try {
+      if (setting.title === "Shell") {
+        await client.api.config.update({ shell: (next as string) === "" ? null : next as string })
+        setShellCurrent(next as string)
+      } else {
+        await config.update((draft) => {
+          const parent = setting.path.slice(0, -1).reduce<Record<string, unknown>>((result, key) => {
+            if (!result[key] || typeof result[key] !== "object") result[key] = {}
+            return result[key] as Record<string, unknown>
+          }, draft)
+          parent[setting.path.at(-1)!] = next
+        })
+      }
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
