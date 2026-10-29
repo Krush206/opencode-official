@@ -268,7 +268,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     onMiniSettingChange: config
       ? async (change: MiniSettingChange) => {
           if (change.key === "shell") {
-            await state.sdk.config.update({ shell: change.value || null }).catch(() => {})
+            await state.sdk.config.update({ shell: change.value || null })
             configState.current = { ...configState.current, shell: change.value }
             return configState.current
           }
