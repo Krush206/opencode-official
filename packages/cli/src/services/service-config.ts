@@ -246,11 +246,17 @@ export const get = Effect.fn("cli.service-config.get")(function* (key?: string, 
       return name === undefined ? JSON.stringify(env, null, 2) : (env[name] ?? "")
     }
     case "shell": {
-      const endpoint = yield* discover().pipe(Effect.orElseSucceed(() => undefined))
+      const opts = yield* options()
+      const endpoint = yield* discover({ ...opts, version: undefined }).pipe(Effect.orElseSucceed(() => undefined))
       if (!endpoint) return ""
       const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
-      const cfg = yield* Effect.promise(() => client.config.get()).pipe(Effect.orElseSucceed(() => ({} as any)))
-      return cfg.shell ?? ""
+      const entries = yield* Effect.promise(() => client.config.get()).pipe(Effect.orElseSucceed(() => [] as any))
+      let shell: string | undefined = undefined
+      for (const e of entries) {
+        const v = (e as any).shell
+        if (v !== undefined) shell = v
+      }
+      return shell ?? ""
     }
   }
   throw new Error(`Unknown service config key: ${key}`)
@@ -317,8 +323,9 @@ export const set = Effect.fn("cli.service-config.set")(function* (key: string, v
       return
     }
     case "shell": {
-      const endpoint = yield* discover().pipe(Effect.orElseSucceed(() => undefined))
-      if (!endpoint) return
+      const opts = yield* options()
+      const endpoint = yield* discover({ ...opts, version: undefined }).pipe(Effect.orElseSucceed(() => undefined))
+      if (!endpoint) return yield* Effect.fail(new Error("No running OpenCode service found. Start the service with `opencode serve --service` or run `opencode service set` while the service is running."))
       const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
       yield* Effect.promise(() => client.config.update({ shell: value || null })).pipe(Effect.orElseSucceed(() => undefined))
       return
@@ -374,8 +381,9 @@ export const unset = Effect.fn("cli.service-config.unset")(function* (key: strin
       return
     }
     case "shell": {
-      const endpoint = yield* discover().pipe(Effect.orElseSucceed(() => undefined))
-      if (!endpoint) return
+      const opts = yield* options()
+      const endpoint = yield* discover({ ...opts, version: undefined }).pipe(Effect.orElseSucceed(() => undefined))
+      if (!endpoint) return yield* Effect.fail(new Error("No running OpenCode service found. Start the service with `opencode serve --service` or run `opencode service unset` while the service is running."))
       const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
       yield* Effect.promise(() => client.config.update({ shell: null })).pipe(Effect.orElseSucceed(() => undefined))
       return
