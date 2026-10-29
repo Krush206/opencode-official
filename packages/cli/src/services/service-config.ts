@@ -253,7 +253,7 @@ export const get = Effect.fn("cli.service-config.get")(function* (key?: string, 
       const entries = yield* Effect.promise(() => client.config.get()).pipe(Effect.orElseSucceed(() => [] as any))
       let shell: string | undefined = undefined
       for (const e of entries) {
-        const v = (e as any).shell
+        const v = (e as any).info?.shell ?? (e as any).shell
         if (v !== undefined) shell = v
       }
       return shell ?? ""
