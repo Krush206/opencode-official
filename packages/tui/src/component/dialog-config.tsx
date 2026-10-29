@@ -434,6 +434,7 @@ export function DialogConfig(props: { current?: string }) {
   const display = (setting: Setting) => {
     const current = value(setting)
     if (setting.format) return setting.format(current)
+    if (setting.title === "Shell") return current ? String(current) : "default"
     const index = setting.values?.indexOf(current)
     return index === undefined || index < 0 ? String(current) : (setting.labels?.[index] ?? String(current))
   }
