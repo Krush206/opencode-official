@@ -1,4 +1,4 @@
-import { createMemo, createSignal, createEffect } from "solid-js"
+import { createMemo, createSignal, createResource } from "solid-js"
 import { useConfig, useNewDesigns } from "../config"
 import { useThemes } from "../context/theme"
 import { useDialog, type DialogContext } from "../ui/dialog"
@@ -397,27 +397,25 @@ export function DialogConfig(props: { current?: string }) {
   )
   const [selected, setSelected] = createSignal(current)
   const [saving, setSaving] = createSignal(false)
-  const [shellOptions, setShellOptions] = createSignal<string[]>([""])
-  const [shellCurrent, setShellCurrent] = createSignal<string>("")
 
   // Load shell options and current shell from core config
-  createEffect(async () => {
-    try {
-      const [entries, shellsRes] = await Promise.all([
-        client.api.config.get().catch(() => []),
-        client.api.config.shells().catch(() => []),
-      ])
-      const boundary = entries.findIndex((e: any) => e.type === "directory")
-      const global = boundary === -1 ? entries : entries.slice(0, boundary)
-      const shell =
-        global.flatMap((e: any) => e.type === "document" && e.info?.shell !== undefined ? [e.info.shell] : []).at(-1) ?? ""
-      setShellCurrent(shell)
-      setShellOptions(["", ...shellsRes.map((s: any) => s.path)])
-    } catch {}
+  const [shellData, { refetch: refetchShell }] = createResource(async () => {
+    const [entries, shellsRes] = await Promise.all([
+      client.api.config.get(),
+      client.api.config.shells(),
+    ])
+    const boundary = entries.findIndex((e) => e.type === "directory")
+    const global = boundary === -1 ? entries : entries.slice(0, boundary)
+    const shell =
+      global.flatMap((e) => e.type === "document" && e.info?.shell !== undefined ? [e.info.shell] : []).at(-1) ?? ""
+    return {
+      current: shell,
+      options: ["", ...shellsRes.map((s) => s.path)],
+    }
   })
 
   const value = (setting: Setting) => {
-    if (setting.title === "Shell") return shellCurrent()
+    if (setting.title === "Shell") return shellData()?.current ?? ""
     const current = setting.path.reduce<unknown>((result, key) => {
       if (!result || typeof result !== "object") return undefined
       return (result as Record<string, unknown>)[key]
@@ -427,7 +425,7 @@ export function DialogConfig(props: { current?: string }) {
   }
   const values = (setting: Setting) =>
     setting.title === "Shell"
-      ? shellOptions()
+      ? shellData()?.options ?? [""]
       : setting.path.join(".") === "theme.name"
       ? Object.keys(themes.all()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
       : setting.values
@@ -467,7 +465,7 @@ export function DialogConfig(props: { current?: string }) {
     try {
       if (setting.title === "Shell") {
         await client.api.config.update({ shell: (next as string) === "" ? null : next as string })
-        setShellCurrent(next as string)
+        await refetchShell()
       } else {
         await config.update((draft) => {
           const parent = setting.path.slice(0, -1).reduce<Record<string, unknown>>((result, key) => {
