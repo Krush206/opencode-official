@@ -26,7 +26,6 @@ export const Info = Schema.Struct({
   password: Schema.optional(Schema.String),
   cors: Schema.optional(Schema.Array(Schema.String)),
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  shell: Schema.optional(Schema.String),
 })
 export type Info = typeof Info.Type
 
@@ -247,7 +246,11 @@ export const get = Effect.fn("cli.service-config.get")(function* (key?: string, 
       return name === undefined ? JSON.stringify(env, null, 2) : (env[name] ?? "")
     }
     case "shell": {
-      return (yield* read()).shell ?? ""
+      const endpoint = yield* discover().pipe(Effect.orElseSucceed(() => undefined))
+      if (!endpoint) return ""
+      const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
+      const cfg = yield* Effect.promise(() => client.config.get()).pipe(Effect.orElseSucceed(() => ({} as any)))
+      return cfg.shell ?? ""
     }
   }
   throw new Error(`Unknown service config key: ${key}`)
@@ -314,14 +317,10 @@ export const set = Effect.fn("cli.service-config.set")(function* (key: string, v
       return
     }
     case "shell": {
-      yield* Service.stop(yield* options())
-      yield* write({ ...(yield* read()), shell: value || undefined })
-      // Also update server config if service is running
       const endpoint = yield* discover().pipe(Effect.orElseSucceed(() => undefined))
-      if (endpoint) {
-        const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
-        yield* Effect.promise(() => client.config.update({ shell: value || null })).pipe(Effect.orElseSucceed(() => undefined))
-      }
+      if (!endpoint) return
+      const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
+      yield* Effect.promise(() => client.config.update({ shell: value || null })).pipe(Effect.orElseSucceed(() => undefined))
       return
     }
   }
@@ -375,15 +374,10 @@ export const unset = Effect.fn("cli.service-config.unset")(function* (key: strin
       return
     }
     case "shell": {
-      yield* Service.stop(yield* options())
-      const { shell: _shell, ...next } = yield* read()
-      yield* write(next)
-      // Also update server config if service is running
       const endpoint = yield* discover().pipe(Effect.orElseSucceed(() => undefined))
-      if (endpoint) {
-        const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
-        yield* Effect.promise(() => client.config.update({ shell: null })).pipe(Effect.orElseSucceed(() => undefined))
-      }
+      if (!endpoint) return
+      const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
+      yield* Effect.promise(() => client.config.update({ shell: null })).pipe(Effect.orElseSucceed(() => undefined))
       return
     }
   }
