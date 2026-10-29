@@ -69,6 +69,7 @@ export type LifecycleInput = {
   variant: string | undefined
   tuiConfig: RunTuiConfig | Promise<RunTuiConfig>
   shell?: string
+  shells?: string[]
   onMiniSettingChange?: (change: MiniSettingChange) => Promise<MiniSettings>
   onPermissionReply: (input: PermissionReply) => void | Promise<void>
   onFormReply: (input: FormReply) => void | Promise<void>
@@ -233,6 +234,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
     tuiConfig,
     miniSettings: {
       current: miniSettings,
+      shells: input.shells,
       update: input.onMiniSettingChange,
     },
     onMonoChange: (mono) => {
